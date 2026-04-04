@@ -40,7 +40,7 @@
 #include <SPI.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
-#include <SparkFun_APDS9930.h>
+#include <APDS9930.h>
 
 // ── Pin definitions ───────────────────────────────────────────────────────────
 #define TFT_CS   10
@@ -81,7 +81,7 @@ static inline uint16_t C(uint8_t r, uint8_t g, uint8_t b) {
 
 // ── Global objects ────────────────────────────────────────────────────────────
 Adafruit_ST7789  tft(TFT_CS, TFT_DC, TFT_RST);
-SparkFun_APDS9930 apds;
+APDS9930 apds;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 static float    g_lux        = 0.0f;
