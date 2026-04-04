@@ -9,7 +9,7 @@ on:
 
 jobs:
   build:
-    name: Build (PlatformIO / nRF52840)
+    name: Build (PlatformIO / Raspberry Pi Pico)
     runs-on: ubuntu-latest
 
     steps:
@@ -38,9 +38,8 @@ jobs:
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: firmware-nrf52840
+          name: firmware-pico
           path: |
-            .pio/build/adafruit_feather_nrf52840/*.hex
-            .pio/build/adafruit_feather_nrf52840/*.bin
-            .pio/build/adafruit_feather_nrf52840/*.elf
+            .pio/build/pico/*.uf2
+            .pio/build/pico/*.elf
           if-no-files-found: warn
