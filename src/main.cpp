@@ -94,7 +94,7 @@ static inline uint16_t C(uint8_t r, uint8_t g, uint8_t b) {
 #ifdef DEBUG
   #define DBG(...)   Serial.print(__VA_ARGS__)
   #define DBGLN(...) Serial.println(__VA_ARGS__)
-  #define DBGF(...)  Serial.printf(__VA_ARGS__)
+  #define DBGF(fmt, ...) do { char _dbg[80]; snprintf(_dbg, sizeof(_dbg), fmt, ##__VA_ARGS__); Serial.print(_dbg); } while(0)
 #else
   #define DBG(...)   ((void)0)
   #define DBGLN(...) ((void)0)
@@ -133,7 +133,7 @@ void setup()
     DBGLN("\n========================================");
     DBGLN(" APDS-9930 Monitor  –  Raspberry Pi Pico");
     DBGLN(" Board  : RP2040 (dual-core Cortex-M0+)");
-    DBGF   (" F_CPU  : %lu MHz\n", (unsigned long)(F_CPU / 1000000UL));
+    DBGF   (" F_CPU  : %lu MHz\n", (unsigned long)(rp2040.f_cpu() / 1000000UL));
     DBGLN(" Display: ST7789 1.69\" (SPI0)");
     DBGLN("   CS=GP17  DC=GP20  RST=GP21  BL=GP22");
     DBGLN(" Sensor : APDS-9930 (I2C0)");
@@ -271,9 +271,9 @@ static void updateLuxWidget()
     // ── Numeric lux value ──
     char buf[16];
     if (g_lux < 10000.0f) {
-        dtostrf(g_lux, 7, 1, buf);
+        snprintf(buf, sizeof(buf), "%.1f", g_lux);
     } else {
-        dtostrf(g_lux, 7, 0, buf);
+        snprintf(buf, sizeof(buf), "%.0f", g_lux);
     }
     // Trim leading spaces
     const char *num = buf;
@@ -339,7 +339,7 @@ static void updateMcuWidget()
     // ── CPU frequency ──
     char cpuBuf[20];
     snprintf(cpuBuf, sizeof(cpuBuf), "CPU  %lu MHz",
-             (unsigned long)(F_CPU / 1000000UL));
+             (unsigned long)(rp2040.f_cpu() / 1000000UL));
     tft.setTextColor(C(150, 220, 150));
     tft.setCursor(xo, yo); tft.print(cpuBuf); yo += LH;
 
