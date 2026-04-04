@@ -133,7 +133,7 @@ void setup()
     DBGLN("\n========================================");
     DBGLN(" APDS-9930 Monitor  –  Raspberry Pi Pico");
     DBGLN(" Board  : RP2040 (dual-core Cortex-M0+)");
-    DBGF   (" F_CPU  : %lu MHz\n", (unsigned long)(F_CPU / 1000000UL));
+    DBGF   (" F_CPU  : %lu MHz\n", (unsigned long)(SystemCoreClock / 1000000UL));
     DBGLN(" Display: ST7789 1.69\" (SPI0)");
     DBGLN("   CS=GP17  DC=GP20  RST=GP21  BL=GP22");
     DBGLN(" Sensor : APDS-9930 (I2C0)");
@@ -339,7 +339,7 @@ static void updateMcuWidget()
     // ── CPU frequency ──
     char cpuBuf[20];
     snprintf(cpuBuf, sizeof(cpuBuf), "CPU  %lu MHz",
-             (unsigned long)(F_CPU / 1000000UL));
+             (unsigned long)(SystemCoreClock / 1000000UL));
     tft.setTextColor(C(150, 220, 150));
     tft.setCursor(xo, yo); tft.print(cpuBuf); yo += LH;
 
