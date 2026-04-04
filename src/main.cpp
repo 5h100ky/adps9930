@@ -33,7 +33,18 @@
  *  • MCU status widget   – uptime, CPU freq, RAM, sensor/BLE
  *  • Backlight control   – PWM brightness tracks lux level
  *  • Update rate         – 500 ms
+ *
+ * Debug
+ * ─────────────────────────────────────────────────────────
+ *  Define DEBUG (below) to enable verbose Serial output:
+ *    setup  – board/pin banner, init results for TFT & sensor
+ *    loop   – lux reading + backlight % every UPDATE_MS cycle
+ *    errors – sensor read failures with cycle counter
  */
+
+// ── Debug switch ──────────────────────────────────────────────────────────────
+// Uncomment to enable verbose Serial output (setup banner + per-cycle readings).
+// #define DEBUG
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -79,6 +90,17 @@ static inline uint16_t C(uint8_t r, uint8_t g, uint8_t b) {
          |  (uint16_t)(b >> 3);
 }
 
+// ── Debug helpers ─────────────────────────────────────────────────────────────
+#ifdef DEBUG
+  #define DBG(...)   Serial.print(__VA_ARGS__)
+  #define DBGLN(...) Serial.println(__VA_ARGS__)
+  #define DBGF(...)  Serial.printf(__VA_ARGS__)
+#else
+  #define DBG(...)   ((void)0)
+  #define DBGLN(...) ((void)0)
+  #define DBGF(...)  ((void)0)
+#endif
+
 // ── Global objects ────────────────────────────────────────────────────────────
 Adafruit_ST7789  tft(TFT_CS, TFT_DC, TFT_RST);
 APDS9930 apds;
@@ -89,6 +111,9 @@ static bool     g_sensorOk   = false;
 static uint32_t g_lastUpdate = 0;
 static uint32_t g_startMs    = 0;
 static uint8_t  g_brightness = BL_MAX;
+#ifdef DEBUG
+static uint32_t g_loopCount  = 0;   // update-cycle counter (debug only)
+#endif
 
 // ── Prototypes ────────────────────────────────────────────────────────────────
 static void drawStaticUI();
@@ -101,15 +126,33 @@ static void applyBacklight(float luxVal);
 void setup()
 {
     Serial.begin(115200);
+#ifdef DEBUG
+    // Wait up to 3 s for a serial terminal so the banner is visible.
+    uint32_t t0 = millis();
+    while (!Serial && (millis() - t0 < 3000)) { /* spin */ }
+    DBGLN("\n========================================");
+    DBGLN(" APDS-9930 Monitor  –  Raspberry Pi Pico");
+    DBGLN(" Board  : RP2040 (dual-core Cortex-M0+)");
+    DBGF   (" F_CPU  : %lu MHz\n", (unsigned long)(F_CPU / 1000000UL));
+    DBGLN(" Display: ST7789 1.69\" (SPI0)");
+    DBGLN("   CS=GP17  DC=GP20  RST=GP21  BL=GP22");
+    DBGLN(" Sensor : APDS-9930 (I2C0)");
+    DBGLN("   SDA=GP4  SCL=GP5");
+    DBGLN("========================================");
+#endif
 
     // ── Backlight on immediately ──
+    DBG("[INIT] Backlight ... ");
     pinMode(TFT_BL, OUTPUT);
     analogWrite(TFT_BL, BL_MAX);
+    DBGLN("OK (PWM GP22, duty=255)");
 
     // ── Display: native portrait 240×280, then rotate to landscape 280×240 ──
+    DBG("[INIT] ST7789 TFT  ... ");
     tft.init(240, 280);
     tft.setRotation(1);
     tft.fillScreen(ST77XX_BLACK);
+    DBGLN("OK (landscape 280x240)");
 
     // Boot splash
     tft.setTextColor(ST77XX_WHITE);
@@ -118,17 +161,25 @@ void setup()
     tft.print("Initializing...");
 
     // ── Sensor init ──
-    Wire.begin();
+    DBG("[INIT] I2C Wire    ... ");
+    Wire.begin();   // GP4=SDA, GP5=SCL (default I2C0 on Pico)
+    DBGLN("OK (I2C0: SDA=GP4, SCL=GP5)");
+
+    DBG("[INIT] APDS-9930   ... ");
     g_sensorOk = apds.init();
     if (g_sensorOk) {
         apds.enableLightSensor(false);   // polling mode
+        DBGLN("OK (light sensor enabled, polling mode)");
         delay(200);
     } else {
-        Serial.println("[WARN] APDS-9930 init failed");
+        DBGLN("FAIL – check wiring (SDA=GP4, SCL=GP5) and I2C address (0x39)");
     }
 
     g_startMs = millis();
+    DBGLN("[INIT] Drawing static UI ...");
     drawStaticUI();
+    DBGF("[INIT] Setup complete in %lu ms\n", (unsigned long)(millis() - g_startMs));
+    DBGLN("----------------------------------------");
 }
 
 // =============================================================================
@@ -137,13 +188,31 @@ void loop()
     uint32_t now = millis();
     if (now - g_lastUpdate < UPDATE_MS) return;
     g_lastUpdate = now;
+#ifdef DEBUG
+    g_loopCount++;
+#endif
 
     // ── Read sensor ──
     if (g_sensorOk) {
         float newLux = 0.0f;
         if (apds.readAmbientLightLux(newLux)) {
             g_lux = newLux;
+#ifdef DEBUG
+            DBGF("[LOOP #%lu] lux=%.1f  BL=%u/255 (%u%%)\n",
+                 (unsigned long)g_loopCount, g_lux, g_brightness,
+                 (unsigned)(((uint16_t)(g_brightness - BL_MIN) * 100u) / (BL_MAX - BL_MIN)));
+#endif
+        } else {
+#ifdef DEBUG
+            DBGF("[LOOP #%lu] APDS-9930 readAmbientLightLux() failed\n",
+                 (unsigned long)g_loopCount);
+#endif
         }
+    } else {
+#ifdef DEBUG
+        DBGF("[LOOP #%lu] sensor not initialised – skipping read\n",
+             (unsigned long)g_loopCount);
+#endif
     }
 
     // ── Apply brightness ──
