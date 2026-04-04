@@ -1,0 +1,46 @@
+name: Build Firmware
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (PlatformIO / nRF52840)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Cache PlatformIO packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: |
+            pio-${{ runner.os }}-
+
+      - name: Build firmware
+        run: pio run
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-nrf52840
+          path: |
+            .pio/build/sparkfun_pro_nrf52840mini/*.hex
+            .pio/build/sparkfun_pro_nrf52840mini/*.bin
+            .pio/build/sparkfun_pro_nrf52840mini/*.elf
+          if-no-files-found: warn
