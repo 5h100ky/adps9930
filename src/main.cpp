@@ -3,29 +3,29 @@
  *
  * Hardware
  * ─────────────────────────────────────────────────────────
- * MCU    : Pro Micro nRF52840 (SparkFun / compatible)
+ * MCU    : Raspberry Pi Pico (RP2040)
  * Sensor : APDS-9930 Ambient Light & Proximity Sensor (I2C)
  * Display: ST7789 1.69" TFT, 240×280 px  →  landscape 280×240
  *
  * Wiring
  * ─────────────────────────────────────────────────────────
- *  ST7789 pin  │ Pro Micro nRF52840
- *  ────────────┼───────────────────
+ *  ST7789 pin  │ Raspberry Pi Pico (RP2040)
+ *  ────────────┼──────────────────────────
  *  GND         │ GND
  *  VCC         │ 3.3 V
- *  SCL  (SCK)  │ D15  (SPI SCK)
- *  SDA  (MOSI) │ D16  (SPI MOSI)
- *  RES  (RST)  │ D8
- *  DC          │ D9
- *  CS          │ D10
- *  BLK  (PWM)  │ D6   ← backlight brightness (PWM)
+ *  SCL  (SCK)  │ GP18  (SPI0 SCK)
+ *  SDA  (MOSI) │ GP19  (SPI0 TX)
+ *  RES  (RST)  │ GP21
+ *  DC          │ GP20
+ *  CS          │ GP17  (SPI0 CSn)
+ *  BLK  (PWM)  │ GP22  ← backlight brightness (PWM)
  *
- *  APDS-9930   │ Pro Micro nRF52840
- *  ────────────┼───────────────────
+ *  APDS-9930   │ Raspberry Pi Pico (RP2040)
+ *  ────────────┼──────────────────────────
  *  GND         │ GND
  *  VCC         │ 3.3 V
- *  SDA         │ D2   (I2C SDA)
- *  SCL         │ D3   (I2C SCL)
+ *  SDA         │ GP4   (I2C0 SDA)
+ *  SCL         │ GP5   (I2C0 SCL)
  *
  * Features
  * ─────────────────────────────────────────────────────────
@@ -43,10 +43,10 @@
 #include <APDS9930.h>
 
 // ── Pin definitions ───────────────────────────────────────────────────────────
-#define TFT_CS   10
-#define TFT_DC    9
-#define TFT_RST   8
-#define TFT_BL    6   // PWM backlight
+#define TFT_CS   17   // GP17 (SPI0 CSn)
+#define TFT_DC   20   // GP20
+#define TFT_RST  21   // GP21
+#define TFT_BL   22   // GP22 – PWM backlight
 
 // ── Display geometry (landscape) ─────────────────────────────────────────────
 static const uint16_t SCREEN_W = 280;
@@ -268,20 +268,23 @@ static void updateMcuWidget()
     tft.setCursor(xo, yo); tft.print(upBuf); yo += LH;
 
     // ── CPU frequency ──
+    char cpuBuf[20];
+    snprintf(cpuBuf, sizeof(cpuBuf), "CPU  %lu MHz",
+             (unsigned long)(F_CPU / 1000000UL));
     tft.setTextColor(C(150, 220, 150));
-    tft.setCursor(xo, yo); tft.print("CPU  64 MHz"); yo += LH;
+    tft.setCursor(xo, yo); tft.print(cpuBuf); yo += LH;
 
-    // ── RAM (nRF52840 has 256 KB SRAM) ──
-    tft.setCursor(xo, yo); tft.print("RAM  256 KB"); yo += LH;
+    // ── RAM (RP2040 has 264 KB SRAM) ──
+    tft.setCursor(xo, yo); tft.print("RAM  264 KB"); yo += LH;
 
     // ── Sensor status ──
     tft.setTextColor(g_sensorOk ? C(80, 255, 80) : C(255, 80, 80));
     tft.setCursor(xo, yo);
     tft.print(g_sensorOk ? "SENS OK" : "SENS ERR"); yo += LH;
 
-    // ── BLE ──
+    // ── Core ──
     tft.setTextColor(C(100, 150, 255));
-    tft.setCursor(xo, yo); tft.print("BLE  nRF52840"); yo += LH;
+    tft.setCursor(xo, yo); tft.print("CORE Dual M0+"); yo += LH;
 
     // ── Backlight % ──
     tft.setTextColor(C(200, 200, 100));

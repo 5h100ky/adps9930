@@ -1,7 +1,7 @@
 # APDS-9930 Illuminance Display
 
 Display the illuminance value from an **APDS-9930** breakout board on a
-**ST7789 1.69-inch TFT** (landscape mode) using a **Pro Micro nRF52840**.
+**ST7789 1.69-inch TFT** (landscape mode) using a **Raspberry Pi Pico (RP2040)**.
 
 The screen backlight brightness is automatically linked to the ambient light
 level read by the APDS-9930.
@@ -12,7 +12,7 @@ level read by the APDS-9930.
 
 | Component | Details |
 |-----------|---------|
-| MCU | SparkFun Pro Micro – nRF52840 (or compatible) |
+| MCU | Raspberry Pi Pico (RP2040, dual-core ARM Cortex-M0+) |
 | Display | ST7789 1.69" TFT, 240 × 280 px |
 | Sensor | APDS-9930 Ambient Light & Proximity Sensor |
 | Interface | Display: SPI · Sensor: I²C |
@@ -21,27 +21,27 @@ level read by the APDS-9930.
 
 ## Wiring
 
-### ST7789 1.69" Display (SPI)
+### ST7789 1.69" Display (SPI0)
 
-| ST7789 pin | Pro Micro nRF52840 |
-|------------|--------------------|
-| GND        | GND                |
-| VCC        | 3.3 V              |
-| SCL (SCK)  | D15 (SPI SCK)      |
-| SDA (MOSI) | D16 (SPI MOSI)     |
-| RES (RST)  | D8                 |
-| DC         | D9                 |
-| CS         | D10                |
-| BLK        | D6 (PWM backlight) |
+| ST7789 pin | Raspberry Pi Pico |
+|------------|-------------------|
+| GND        | GND               |
+| VCC        | 3.3 V             |
+| SCL (SCK)  | GP18 (SPI0 SCK)   |
+| SDA (MOSI) | GP19 (SPI0 TX)    |
+| RES (RST)  | GP21              |
+| DC         | GP20              |
+| CS         | GP17 (SPI0 CSn)   |
+| BLK        | GP22 (PWM backlight) |
 
-### APDS-9930 (I²C)
+### APDS-9930 (I²C0)
 
-| APDS-9930 | Pro Micro nRF52840 |
-|-----------|--------------------|
-| GND       | GND                |
-| VCC       | 3.3 V              |
-| SDA       | D2 (I²C SDA)       |
-| SCL       | D3 (I²C SCL)       |
+| APDS-9930 | Raspberry Pi Pico |
+|-----------|-------------------|
+| GND       | GND               |
+| VCC       | 3.3 V             |
+| SDA       | GP4 (I²C0 SDA)    |
+| SCL       | GP5 (I²C0 SCL)    |
 
 ---
 
@@ -54,10 +54,10 @@ level read by the APDS-9930.
 │  ILLUMINANCE (lux)  │   MCU STATUS       │
 │                     │                    │
 │       1234.5        │  UP  00:01:23      │
-│         lux         │  CPU  64 MHz       │
-│  ████████░░░░░░░░   │  RAM  256 KB       │
+│         lux         │  CPU  125 MHz      │
+│  ████████░░░░░░░░   │  RAM  264 KB       │
 │                     │  SENS OK           │
-│                     │  BLE  nRF52840     │
+│                     │  CORE Dual M0+     │
 │                     │  BL    72%         │
 ├─────────────────────┴────────────────────┤
 │  LUX: INDOOR  |  BL:  72%  |  T+42s     │  ← status bar
@@ -85,11 +85,14 @@ reading:
 # Install PlatformIO CLI if needed
 pip install platformio
 
-# Build
+# Build (generates firmware.uf2)
 pio run
 
-# Build & flash via USB
-pio run --target upload
+# Flash via UF2:
+#   1. Hold the BOOTSEL button on the Pico, then plug in USB
+#   2. The Pico mounts as a USB drive named RPI-RP2
+#   3. Copy the UF2 file to the drive – it reboots automatically
+cp .pio/build/pico/firmware.uf2 /media/$USER/RPI-RP2/
 
 # Open serial monitor
 pio device monitor
@@ -100,7 +103,7 @@ Dependencies are fetched automatically by PlatformIO:
 - **Adafruit ST7735 and ST7789 Library** ≥ 1.10.4
 - **Adafruit GFX Library** ≥ 1.11.9
 - **Adafruit BusIO** ≥ 1.16.1
-- **SparkFun APDS-9930 Ambient Light and Proximity Sensor** ≥ 1.0.0
+- **APDS9930** (Depau fork, pinned commit)
 
 ---
 
