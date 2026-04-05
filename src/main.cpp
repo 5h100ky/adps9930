@@ -116,7 +116,7 @@ void setup()
 
     // ── OLED ──
     DBG("[INIT] SSD1306 OLED ... ");
-    if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR, true, false)) {
+    if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR, /* reset= */true, /* periphBegin= */false)) {
         Serial.println("[INIT] SSD1306 FAIL – check wiring (SDA=GP4, SCL=GP5) and address (0x3C)");
         for (;;) delay(1000);   // halt – nothing else can be shown
     }
