@@ -40,6 +40,6 @@ jobs:
         with:
           name: firmware-pico
           path: |
-            .pio/build/pico/*.uf2
-            .pio/build/pico/*.elf
+            .pio/build/waveshare_rp2040_zero/*.uf2
+            .pio/build/waveshare_rp2040_zero/*.elf
           if-no-files-found: warn
