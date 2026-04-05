@@ -28,7 +28,7 @@
  *
  * Debug
  * ─────────────────────────────────────────────────────────
- *  Define DEBUG (below) to enable verbose Serial output:
+ *  Define APP_DEBUG (below) to enable verbose Serial output:
  *    setup  – board/pin banner, init results for OLED & sensor
  *    loop   – lux reading every UPDATE_MS cycle
  *    errors – sensor read failures with cycle counter
@@ -36,7 +36,8 @@
 
 // ── Debug switch ──────────────────────────────────────────────────────────────
 // Uncomment to enable verbose Serial output (setup banner + per-cycle readings).
-// #define DEBUG
+// Note: do NOT use the name DEBUG here – APDS9930.h already defines #define DEBUG 0.
+// #define APP_DEBUG
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -64,7 +65,7 @@ static const float    LUX_RANGE_SUNLIT  = 2000.0f;
 static const uint32_t UPDATE_MS = 500;
 
 // ── Debug helpers ─────────────────────────────────────────────────────────────
-#ifdef DEBUG
+#ifdef APP_DEBUG
   #define DBG(...)   Serial.print(__VA_ARGS__)
   #define DBGLN(...) Serial.println(__VA_ARGS__)
   #define DBGF(fmt, ...) do { char _dbg[80]; snprintf(_dbg, sizeof(_dbg), fmt, ##__VA_ARGS__); Serial.print(_dbg); } while(0)
@@ -82,8 +83,7 @@ APDS9930 apds;
 static float    g_lux        = 0.0f;
 static bool     g_sensorOk   = false;
 static uint32_t g_lastUpdate = 0;
-static uint32_t g_startMs    = 0;
-#ifdef DEBUG
+#ifdef APP_DEBUG
 static uint32_t g_loopCount  = 0;   // update-cycle counter (debug only)
 #endif
 
@@ -94,7 +94,7 @@ static void drawUI();
 void setup()
 {
     Serial.begin(115200);
-#ifdef DEBUG
+#ifdef APP_DEBUG
     // Wait up to 3 s for a serial terminal so the banner is visible.
     uint32_t t0 = millis();
     while (!Serial && (millis() - t0 < 3000)) { /* spin */ }
@@ -111,12 +111,12 @@ void setup()
 
     // ── I2C bus ──
     DBG("[INIT] I2C Wire    ... ");
-    Wire.begin();   // GP4=SDA, GP5=SCL (default I2C0 on RP2040 Zero)
+    Wire.begin(4, 5);   // GP4=SDA, GP5=SCL (I2C0 on RP2040 Zero)
     DBGLN("OK (I2C0: SDA=GP4, SCL=GP5)");
 
     // ── OLED ──
     DBG("[INIT] SSD1306 OLED ... ");
-    if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
+    if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR, /* reset= */true, /* periphBegin= */false)) {
         Serial.println("[INIT] SSD1306 FAIL – check wiring (SDA=GP4, SCL=GP5) and address (0x3C)");
         for (;;) delay(1000);   // halt – nothing else can be shown
     }
@@ -134,14 +134,17 @@ void setup()
     DBG("[INIT] APDS-9930   ... ");
     g_sensorOk = apds.init();
     if (g_sensorOk) {
-        apds.enableLightSensor(false);   // polling mode
-        DBGLN("OK (light sensor enabled, polling mode)");
+        g_sensorOk = apds.enableLightSensor(false);   // polling mode
+        if (g_sensorOk) {
+            DBGLN("OK (light sensor enabled, polling mode)");
+        } else {
+            DBGLN("FAIL – enableLightSensor() returned false");
+        }
         delay(200);
     } else {
         DBGLN("FAIL – check wiring (SDA=GP4, SCL=GP5) and I2C address (0x39)");
     }
 
-    g_startMs = millis();
     DBGLN("[INIT] Setup complete");
     DBGLN("----------------------------------------");
 }
@@ -152,7 +155,7 @@ void loop()
     uint32_t now = millis();
     if (now - g_lastUpdate < UPDATE_MS) return;
     g_lastUpdate = now;
-#ifdef DEBUG
+#ifdef APP_DEBUG
     g_loopCount++;
 #endif
 
