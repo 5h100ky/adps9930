@@ -54,6 +54,12 @@
 static const float    LUX_DIM    =   5.0f;   // lux below this → empty bar
 static const float    LUX_BRIGHT = 800.0f;   // lux above this → full bar
 
+// ── Lux range labels ─────────────────────────────────────────────────────────
+static const float    LUX_RANGE_DIM     =   10.0f;
+static const float    LUX_RANGE_INDOOR  =  100.0f;
+static const float    LUX_RANGE_BRIGHT  =  500.0f;
+static const float    LUX_RANGE_SUNLIT  = 2000.0f;
+
 // ── Update interval ───────────────────────────────────────────────────────────
 static const uint32_t UPDATE_MS = 500;
 
@@ -111,7 +117,7 @@ void setup()
     // ── OLED ──
     DBG("[INIT] SSD1306 OLED ... ");
     if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
-        DBGLN("FAIL – check wiring (SDA=GP4, SCL=GP5) and address (0x3C)");
+        Serial.println("[INIT] SSD1306 FAIL – check wiring (SDA=GP4, SCL=GP5) and address (0x3C)");
         for (;;) delay(1000);   // halt – nothing else can be shown
     }
     DBGLN("OK (128x64, I2C 0x3C)");
@@ -237,11 +243,11 @@ static void drawUI()
     // ── Status line (y=52, size=1, h=8) ──────────────────────────────────────
     // Left: lux range label
     const char *rangeStr;
-    if      (g_lux <   10.0f) rangeStr = "DARK";
-    else if (g_lux <  100.0f) rangeStr = "DIM";
-    else if (g_lux <  500.0f) rangeStr = "INDOOR";
-    else if (g_lux < 2000.0f) rangeStr = "BRIGHT";
-    else                       rangeStr = "SUNLIGHT";
+    if      (g_lux <  LUX_RANGE_DIM)    rangeStr = "DARK";
+    else if (g_lux <  LUX_RANGE_INDOOR) rangeStr = "DIM";
+    else if (g_lux <  LUX_RANGE_BRIGHT) rangeStr = "INDOOR";
+    else if (g_lux <  LUX_RANGE_SUNLIT) rangeStr = "BRIGHT";
+    else                                 rangeStr = "SUNLIGHT";
 
     display.setTextSize(1);
     display.setCursor(2, 52);
