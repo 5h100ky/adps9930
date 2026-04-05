@@ -111,7 +111,9 @@ void setup()
 
     // ── I2C bus ──
     DBG("[INIT] I2C Wire    ... ");
-    Wire.begin(4, 5);   // GP4=SDA, GP5=SCL (I2C0 on RP2040 Zero)
+    Wire.setSDA(4);     // GP4=SDA (I2C0 on RP2040 Zero)
+    Wire.setSCL(5);     // GP5=SCL (I2C0 on RP2040 Zero)
+    Wire.begin();
     DBGLN("OK (I2C0: SDA=GP4, SCL=GP5)");
 
     // ── OLED ──
