@@ -34,7 +34,6 @@ Examples
 """
 
 import sys
-import glob
 import threading
 import datetime
 import time
@@ -51,23 +50,32 @@ except ImportError:
 # Port auto-detection
 # ---------------------------------------------------------------------------
 def _auto_detect_port() -> str:
-    """Return the first plausible USB-serial port, or a sensible default."""
-    candidates: list[str] = []
+    """Return the first plausible USB-serial port, or a sensible default.
 
-    # Linux / macOS
-    for pattern in ("/dev/ttyACM*", "/dev/ttyUSB*", "/dev/cu.usbmodem*",
-                    "/dev/cu.usbserial*"):
-        candidates.extend(sorted(glob.glob(pattern)))
+    Uses ``serial.tools.list_ports`` to enumerate only ports that are
+    actually present on the system.  A USB/ACM-related port is preferred;
+    if none is found the first available port of any kind is used.  Only
+    when *no* port is detected at all does the function fall back to a
+    hard-coded platform default (COM3 / /dev/ttyACM0) so that the caller
+    can surface a meaningful error.
+    """
+    from serial.tools import list_ports  # part of pyserial
 
-    # Windows – try COM3..COM20
-    if sys.platform.startswith("win"):
-        for n in range(3, 21):
-            candidates.append(f"COM{n}")
+    all_ports = list_ports.comports()
 
-    if candidates:
-        return candidates[0]
+    # Prefer ports that look like USB-serial adapters or CDC-ACM devices.
+    usb_ports = [
+        p.device for p in all_ports
+        if p.hwid and p.hwid.upper() != "N/A"
+    ]
+    if usb_ports:
+        return usb_ports[0]
 
-    # Hard fallbacks
+    # Fall back to any detected port.
+    if all_ports:
+        return all_ports[0].device
+
+    # Hard fallbacks – no port detected; the caller will report the error.
     if sys.platform.startswith("win"):
         return "COM3"
     return "/dev/ttyACM0"
@@ -128,6 +136,10 @@ def main() -> None:
         ser = serial.Serial(port, baud, timeout=0.1)
     except serial.SerialException as exc:
         print(f"[sync_time] Cannot open {port}: {exc}")
+        print("[sync_time] Make sure the board is plugged in and the correct")
+        print("[sync_time] port is selected.  Pass the port explicitly, e.g.:")
+        print("[sync_time]   python sync_time.py COM5")
+        print("[sync_time]   python sync_time.py /dev/ttyACM1")
         sys.exit(1)
 
     print("[sync_time] Connected.  Waiting for board to send TIME? …")
