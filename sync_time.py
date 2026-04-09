@@ -77,7 +77,11 @@ def _auto_detect_port() -> str:
 # Time-sync helper
 # ---------------------------------------------------------------------------
 def _make_sync_cmd() -> bytes:
-    """Return a T-command string with the current local time, UTF-8 encoded."""
+    """Return ``T<YYYY-MM-DD HH:MM:SS>\\n`` encoded as UTF-8 bytes.
+
+    The format matches what the firmware's handleSerialSync() expects:
+    a leading 'T', a space-separated date and time, terminated with '\\n'.
+    """
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return f"T{ts}\n".encode()
 
@@ -137,7 +141,7 @@ def main() -> None:
     # Allow manual input from the terminal as well
     try:
         while t.is_alive():
-            line = input()          # blocks until user presses Enter
+            line = input()          # forward manual commands to the board
             if line:
                 ser.write((line + "\n").encode())
     except (KeyboardInterrupt, EOFError):
