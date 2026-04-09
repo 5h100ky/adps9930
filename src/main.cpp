@@ -38,6 +38,11 @@
  *  • Progress bar        – maps 5…800 lux
  *  • Status line         – lux range label + RTC state
  *  • Update rate         – 500 ms
+ *  • RTC auto-sync       – resets to compile timestamp on first flash
+ *                          or whenever RTC time is behind compile time
+ *  • Serial time sync    – send  T<YYYY-MM-DD HH:MM:SS>  over serial
+ *                          (115200 baud) to sync RTC to PC time exactly,
+ *                          e.g.  T2026-04-09 22:57:41
  *
  * Debug
  * ─────────────────────────────────────────────────────────
@@ -106,6 +111,7 @@ static uint32_t g_loopCount  = 0;   // update-cycle counter (debug only)
 
 // ── Prototype ─────────────────────────────────────────────────────────────────
 static void drawUI();
+static void handleSerialSync();
 
 // =============================================================================
 void setup()
@@ -171,10 +177,12 @@ void setup()
     DBG("[INIT] DS3231 RTC   ... ");
     g_rtcOk = rtc.begin(&Wire);
     if (g_rtcOk) {
-        if (rtc.lostPower()) {
-            // First run or battery died – seed with compile-time timestamp.
-            rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
-            DBGLN("OK (power lost – time set to compile timestamp)");
+        DateTime compiled(F(__DATE__), F(__TIME__));
+        if (rtc.lostPower() || rtc.now() < compiled) {
+            // First run, battery died, or RTC is behind compile timestamp –
+            // reset to the time this firmware was built.
+            rtc.adjust(compiled);
+            DBGLN("OK (time set to compile timestamp)");
         } else {
             DBGLN("OK");
         }
@@ -196,6 +204,9 @@ void loop()
 #ifdef APP_DEBUG
     g_loopCount++;
 #endif
+
+    // ── Handle serial time-sync command ──
+    handleSerialSync();
 
     // ── Read RTC ──
     if (g_rtcOk) {
@@ -223,6 +234,80 @@ void loop()
 
     // ── Refresh display ──
     drawUI();
+}
+
+// =============================================================================
+// Serial time-sync
+//
+// Send a line in the format:   T<YYYY-MM-DD HH:MM:SS>
+// Example (Python):
+//   import serial, datetime
+//   s = serial.Serial('/dev/ttyACM0', 115200)
+//   s.write(('T' + datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S') + '\n').encode())
+// Example (manual terminal): type  T2026-04-09 22:57:41  then press Enter
+// =============================================================================
+static char  s_serialBuf[32];
+static uint8_t s_serialLen = 0;
+
+static void handleSerialSync()
+{
+    // Process at most 32 characters per call to avoid blocking the main loop.
+    uint8_t processed = 0;
+    while (processed < 32 && Serial.available()) {
+        char c = (char)Serial.read();
+        processed++;
+        if (c == '\n' || c == '\r') {
+            if (s_serialLen > 0) {
+                s_serialBuf[s_serialLen] = '\0';
+                // Expect: T<YYYY-MM-DD HH:MM:SS>  (20 chars total)
+                // Format: T2026-04-09 22:57:41
+                //          0    5  8  1  4  7
+                //                   1 1  1  1
+                if (s_serialBuf[0] == 'T' && s_serialLen >= 20 &&
+                    s_serialBuf[5]  == '-' && s_serialBuf[8]  == '-' &&
+                    s_serialBuf[11] == ' ' && s_serialBuf[14] == ':' &&
+                    s_serialBuf[17] == ':') {
+                    const char *p = s_serialBuf + 1;
+                    uint16_t yr  = (uint16_t)atoi(p);           // YYYY
+                    uint8_t  mon = (uint8_t)atoi(p + 5);        // MM
+                    uint8_t  day = (uint8_t)atoi(p + 8);        // DD
+                    uint8_t  hr  = (uint8_t)atoi(p + 11);       // HH
+                    uint8_t  mn  = (uint8_t)atoi(p + 14);       // MM
+                    uint8_t  sec = (uint8_t)atoi(p + 17);       // SS
+
+                    // Days per month (non-leap / leap for Feb)
+                    static const uint8_t daysInMonth[] =
+                        { 0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+                    uint8_t maxDay = (mon == 2 && (yr % 4 == 0 &&
+                                     (yr % 100 != 0 || yr % 400 == 0)))
+                                     ? 29 : (mon >= 1 && mon <= 12
+                                            ? daysInMonth[mon] : 0);
+
+                    if (yr >= 2000 && mon >= 1 && mon <= 12 &&
+                        day >= 1   && day <= maxDay          &&
+                        hr  <= 23  && mn  <= 59  && sec <= 59) {
+                        DateTime dt(yr, mon, day, hr, mn, sec);
+                        if (g_rtcOk) {
+                            rtc.adjust(dt);
+                            g_now = rtc.now();
+                            Serial.println("[SYNC] RTC updated OK");
+                        } else {
+                            Serial.println("[SYNC] RTC not available");
+                        }
+                    } else {
+                        Serial.println("[SYNC] Bad date/time values");
+                    }
+                } else {
+                    Serial.println("[SYNC] Usage: T<YYYY-MM-DD HH:MM:SS>");
+                }
+                s_serialLen = 0;
+            }
+        } else {
+            if (s_serialLen < sizeof(s_serialBuf) - 1) {
+                s_serialBuf[s_serialLen++] = c;
+            }
+        }
+    }
 }
 
 // =============================================================================
