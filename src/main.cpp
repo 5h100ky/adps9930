@@ -1,37 +1,50 @@
 /**
- * APDS-9930 Illuminance Display on SSD1306 0.96" OLED
+ * APDS-9930 Illuminance + DS3231 Clock Display on SSD1306 0.96" OLED
  *
  * Hardware
  * ─────────────────────────────────────────────────────────
  * MCU    : Waveshare RP2040 Zero
  * Sensor : APDS-9930 Ambient Light & Proximity Sensor (I2C)
+ * RTC    : DS3231 Real-Time Clock (I2C)
  * Display: SSD1306 0.96" OLED, 128×64 px (I2C)
  *
  * Wiring  (shared I2C0 bus)
  * ─────────────────────────────────────────────────────────
- *  SSD1306 / APDS-9930 │ RP2040 Zero
- *  ────────────────────┼──────────────────────────
- *  GND                 │ GND
- *  VCC                 │ 3.3 V
- *  SDA                 │ GP4  (I2C0 SDA)
- *  SCL                 │ GP5  (I2C0 SCL)
+ *  SSD1306 / APDS-9930 / DS3231 │ RP2040 Zero
+ *  ──────────────────────────────┼──────────────────────────
+ *  GND                           │ GND
+ *  VCC                           │ 3.3 V
+ *  SDA                           │ GP4  (I2C0 SDA)
+ *  SCL                           │ GP5  (I2C0 SCL)
  *
- *  SSD1306  I2C address : 0x3C
+ *  SSD1306   I2C address: 0x3C
  *  APDS-9930 I2C address: 0x39
+ *  DS3231    I2C address: 0x68
+ *
+ * Display Layout  (128×64 px)
+ * ─────────────────────────────────────────────────────────
+ *  y= 0  HH:MM:SS          ← time widget   (size 2, 16 px)
+ *  y=17  DDD YYYY-MM-DD    ← date widget   (size 1,  8 px)
+ *  y=26  ─ separator ─
+ *  y=28  Lux: 9999.9       ← lux reading   (size 1,  8 px)
+ *  y=37  [▓▓▓░░░░░░░]      ← progress bar  (h=6)
+ *  y=44  ─ separator ─
+ *  y=47  INDOOR  RTC:OK    ← status line   (size 1,  8 px)
  *
  * Features
  * ─────────────────────────────────────────────────────────
- *  • Lux value (large, centred)  – numeric reading
- *  • Progress bar                – maps 5…800 lux
- *  • Status line                 – range label + sensor state
- *  • Update rate                 – 500 ms
+ *  • Time / Date widget  – reads DS3231 via I2C
+ *  • Lux reading         – APDS-9930 ambient light
+ *  • Progress bar        – maps 5…800 lux
+ *  • Status line         – lux range label + RTC state
+ *  • Update rate         – 500 ms
  *
  * Debug
  * ─────────────────────────────────────────────────────────
  *  Define APP_DEBUG (below) to enable verbose Serial output:
- *    setup  – board/pin banner, init results for OLED & sensor
- *    loop   – lux reading every UPDATE_MS cycle
- *    errors – sensor read failures with cycle counter
+ *    setup  – board/pin banner, init results for OLED, sensor & RTC
+ *    loop   – lux reading + timestamp every UPDATE_MS cycle
+ *    errors – sensor/RTC read failures with cycle counter
  */
 
 // ── Debug switch ──────────────────────────────────────────────────────────────
@@ -43,6 +56,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <RTClib.h>
 #include <APDS9930.h>
 
 // ── Display ───────────────────────────────────────────────────────────────────
@@ -77,11 +91,14 @@ static const uint32_t UPDATE_MS = 500;
 
 // ── Global objects ────────────────────────────────────────────────────────────
 Adafruit_SSD1306 display(SCREEN_W, SCREEN_H, &Wire, OLED_RESET);
-APDS9930 apds;
+APDS9930        apds;
+RTC_DS3231      rtc;
 
 // ── State ─────────────────────────────────────────────────────────────────────
 static float    g_lux        = 0.0f;
 static bool     g_sensorOk   = false;
+static bool     g_rtcOk      = false;
+static DateTime g_now;
 static uint32_t g_lastUpdate = 0;
 #ifdef APP_DEBUG
 static uint32_t g_loopCount  = 0;   // update-cycle counter (debug only)
@@ -149,6 +166,25 @@ void setup()
 
     DBGLN("[INIT] Setup complete");
     DBGLN("----------------------------------------");
+
+    // ── RTC (DS3231) ──
+    DBG("[INIT] DS3231 RTC   ... ");
+    g_rtcOk = rtc.begin(&Wire);
+    if (g_rtcOk) {
+        if (rtc.lostPower()) {
+            // First run or battery died – seed with compile-time timestamp.
+            rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+            DBGLN("OK (power lost – time set to compile timestamp)");
+        } else {
+            DBGLN("OK");
+        }
+        g_now = rtc.now();
+    } else {
+        DBGLN("FAIL – check wiring (SDA=GP4, SCL=GP5) and I2C address (0x68)");
+    }
+
+    DBGLN("[INIT] All initialisation complete");
+    DBGLN("----------------------------------------");
 }
 
 // =============================================================================
@@ -160,6 +196,15 @@ void loop()
 #ifdef APP_DEBUG
     g_loopCount++;
 #endif
+
+    // ── Read RTC ──
+    if (g_rtcOk) {
+        g_now = rtc.now();
+        DBGF("[LOOP #%lu] time=%02u:%02u:%02u  date=%04u-%02u-%02u\n",
+             (unsigned long)g_loopCount,
+             g_now.hour(), g_now.minute(), g_now.second(),
+             g_now.year(), g_now.month(),  g_now.day());
+    }
 
     // ── Read sensor ──
     if (g_sensorOk) {
@@ -181,17 +226,24 @@ void loop()
 }
 
 // =============================================================================
+// Day-of-week abbreviations (0=Sunday … 6=Saturday)
+// =============================================================================
+static const char* const DAY_NAMES[] = {
+    "SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"
+};
+
+// =============================================================================
 // Full-screen UI (buffered – one display.display() call per cycle)
 //
-// Layout  (128×64 px, text size 1 = 6×8 px per char)
-// ─────────────────────────────────────────────────────
-//  y= 0  "APDS-9930"  title  (size 1, centred)
-//  y= 9  ─ separator line ─
-//  y=12  lux number          (size 2 = 12×16 px, centred)
-//  y=30  "lux"               (size 1, centred)
-//  y=40  [▓▓▓▓▓░░░░░]       progress bar  (h=6)
-//  y=48  ─ separator line ─
-//  y=52  range label (left)  |  sensor status (right)
+// Layout  (128×64 px, text size 1 = 6×8 px, text size 2 = 12×16 px)
+// ─────────────────────────────────────────────────────────────────────
+//  y= 0  HH:MM:SS        (size 2, h=16, centred)    ← time widget
+//  y=17  DDD YYYY-MM-DD  (size 1, h= 8, centred)    ← date widget
+//  y=26  ─ separator line ─
+//  y=28  Lux: 9999.9     (size 1, h= 8, centred)    ← lux reading
+//  y=37  [▓▓▓░░░░░░░]    (h=6)                      ← progress bar
+//  y=44  ─ separator line ─
+//  y=47  INDOOR   RTC:OK (size 1, h= 8)              ← status line
 // =============================================================================
 static void drawUI()
 {
@@ -200,39 +252,51 @@ static void drawUI()
     int16_t  tx, ty;
     uint16_t tw, th;
 
-    // ── Title (y=0, size=1, h=8) ──────────────────────────────────────────────
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.getTextBounds("APDS-9930", 0, 0, &tx, &ty, &tw, &th);
-    display.setCursor((SCREEN_W - (int16_t)tw) / 2, 0);
-    display.print("APDS-9930");
-
-    // ── Separator (y=9) ───────────────────────────────────────────────────────
-    display.drawFastHLine(0, 9, SCREEN_W, SSD1306_WHITE);
-
-    // ── Lux value (y=12, size=2, h=16) ───────────────────────────────────────
-    char buf[16];
-    if (g_lux < 10000.0f) {
-        snprintf(buf, sizeof(buf), "%.1f", g_lux);
+    // ── Time widget (y=0, size=2, h=16) ──────────────────────────────────────
+    char timeBuf[9];   // "HH:MM:SS\0"
+    if (g_rtcOk) {
+        snprintf(timeBuf, sizeof(timeBuf), "%02u:%02u:%02u",
+                 g_now.hour(), g_now.minute(), g_now.second());
     } else {
-        snprintf(buf, sizeof(buf), "%.0f", g_lux);
+        snprintf(timeBuf, sizeof(timeBuf), "--:--:--");
     }
-    const char *num = buf;
-    while (*num == ' ') num++;   // trim leading spaces (snprintf safety)
-
     display.setTextSize(2);
-    display.getTextBounds(num, 0, 0, &tx, &ty, &tw, &th);
-    display.setCursor((SCREEN_W - (int16_t)tw) / 2, 12);
-    display.print(num);
+    display.setTextColor(SSD1306_WHITE);
+    display.getTextBounds(timeBuf, 0, 0, &tx, &ty, &tw, &th);
+    display.setCursor((SCREEN_W - (int16_t)tw) / 2, 0);
+    display.print(timeBuf);
 
-    // ── "lux" label (y=30, size=1, h=8) ──────────────────────────────────────
+    // ── Date widget (y=17, size=1, h=8) ──────────────────────────────────────
+    char dateBuf[16];  // "WED 2026-04-09\0"
+    if (g_rtcOk) {
+        snprintf(dateBuf, sizeof(dateBuf), "%s %04u-%02u-%02u",
+                 DAY_NAMES[g_now.dayOfTheWeek()],
+                 g_now.year(), g_now.month(), g_now.day());
+    } else {
+        snprintf(dateBuf, sizeof(dateBuf), "--- ----------");
+    }
     display.setTextSize(1);
-    display.getTextBounds("lux", 0, 0, &tx, &ty, &tw, &th);
-    display.setCursor((SCREEN_W - (int16_t)tw) / 2, 30);
-    display.print("lux");
+    display.getTextBounds(dateBuf, 0, 0, &tx, &ty, &tw, &th);
+    display.setCursor((SCREEN_W - (int16_t)tw) / 2, 17);
+    display.print(dateBuf);
 
-    // ── Progress bar (y=40, h=6) ──────────────────────────────────────────────
-    const int16_t bx = 2, by = 40, bw = SCREEN_W - 4, bh = 6;
+    // ── Separator (y=26) ──────────────────────────────────────────────────────
+    display.drawFastHLine(0, 26, SCREEN_W, SSD1306_WHITE);
+
+    // ── Lux reading (y=28, size=1, h=8) ──────────────────────────────────────
+    char luxBuf[20];
+    if (g_lux < 10000.0f) {
+        snprintf(luxBuf, sizeof(luxBuf), "Lux: %.1f", g_lux);
+    } else {
+        snprintf(luxBuf, sizeof(luxBuf), "Lux: %.0f", g_lux);
+    }
+    display.setTextSize(1);
+    display.getTextBounds(luxBuf, 0, 0, &tx, &ty, &tw, &th);
+    display.setCursor((SCREEN_W - (int16_t)tw) / 2, 28);
+    display.print(luxBuf);
+
+    // ── Progress bar (y=37, h=6) ──────────────────────────────────────────────
+    const int16_t bx = 2, by = 37, bw = SCREEN_W - 4, bh = 6;
     display.drawRect(bx, by, bw, bh, SSD1306_WHITE);
     float ratio = (g_lux - LUX_DIM) / (LUX_BRIGHT - LUX_DIM);
     if (ratio < 0.0f) ratio = 0.0f;
@@ -242,10 +306,10 @@ static void drawUI()
         display.fillRect(bx + 1, by + 1, fill, bh - 2, SSD1306_WHITE);
     }
 
-    // ── Separator (y=48) ──────────────────────────────────────────────────────
-    display.drawFastHLine(0, 48, SCREEN_W, SSD1306_WHITE);
+    // ── Separator (y=44) ──────────────────────────────────────────────────────
+    display.drawFastHLine(0, 44, SCREEN_W, SSD1306_WHITE);
 
-    // ── Status line (y=52, size=1, h=8) ──────────────────────────────────────
+    // ── Status line (y=47, size=1, h=8) ──────────────────────────────────────
     // Left: lux range label
     const char *rangeStr;
     if      (g_lux <  LUX_RANGE_DIM)    rangeStr = "DARK";
@@ -255,14 +319,14 @@ static void drawUI()
     else                                 rangeStr = "SUNLIGHT";
 
     display.setTextSize(1);
-    display.setCursor(2, 52);
+    display.setCursor(2, 47);
     display.print(rangeStr);
 
-    // Right: sensor status
-    const char *sensStr = g_sensorOk ? "SENS:OK" : "SENS:ERR";
-    display.getTextBounds(sensStr, 0, 0, &tx, &ty, &tw, &th);
-    display.setCursor(SCREEN_W - (int16_t)tw - 2, 52);
-    display.print(sensStr);
+    // Right: RTC status
+    const char *rtcStr = g_rtcOk ? "RTC:OK" : "RTC:ERR";
+    display.getTextBounds(rtcStr, 0, 0, &tx, &ty, &tw, &th);
+    display.setCursor(SCREEN_W - (int16_t)tw - 2, 47);
+    display.print(rtcStr);
 
     // ── Push frame to OLED ────────────────────────────────────────────────────
     display.display();
