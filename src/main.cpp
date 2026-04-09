@@ -43,6 +43,9 @@
  *  • Serial time sync    – send  T<YYYY-MM-DD HH:MM:SS>  over serial
  *                          (115200 baud) to sync RTC to PC time exactly,
  *                          e.g.  T2026-04-09 22:57:41
+ *  • Auto PC sync        – on every boot the board sends "TIME?\n" over
+ *                          serial; run sync_time.py on the PC to respond
+ *                          automatically with the local wall-clock time
  *
  * Debug
  * ─────────────────────────────────────────────────────────
@@ -193,6 +196,10 @@ void setup()
 
     DBGLN("[INIT] All initialisation complete");
     DBGLN("----------------------------------------");
+
+    // ── Request PC local time ──
+    // sync_time.py (or any terminal) should reply with T<YYYY-MM-DD HH:MM:SS>.
+    Serial.println("TIME?");
 }
 
 // =============================================================================
