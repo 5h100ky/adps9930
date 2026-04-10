@@ -102,7 +102,7 @@ def _reader(ser: serial.Serial) -> None:
     while True:
         try:
             chunk = ser.read(ser.in_waiting or 1)
-        except serial.SerialException:
+        except (serial.SerialException, OSError):
             print("\n[sync_time] Serial connection lost.")
             break
         if not chunk:
@@ -120,7 +120,7 @@ def _reader(ser: serial.Serial) -> None:
                     ser.write(cmd)
                     ts = cmd.decode().strip()
                     print(f"[sync ] Sent → {ts}")
-                except serial.SerialException:
+                except (serial.SerialException, OSError):
                     print("[sync ] Failed to send time – port closed.")
 
 
@@ -143,7 +143,8 @@ def main() -> None:
         sys.exit(1)
 
     print("[sync_time] Connected.  Waiting for board to send TIME? …")
-    print("[sync_time] You can also type  T<YYYY-MM-DD HH:MM:SS>  and press Enter.")
+    example = datetime.datetime.now().strftime("T%Y-%m-%d %H:%M:%S")
+    print(f"[sync_time] You can also type  {example}  and press Enter.")
     print("[sync_time] Press Ctrl+C to quit.\n")
 
     # Start background reader thread
