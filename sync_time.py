@@ -3,15 +3,17 @@
 sync_time.py – PC local time auto-sync for the APDS-9930 / DS3231 monitor
 ===========================================================================
 
-Run this script on the PC before (or just after) powering / re-plugging the
-RP2040 board.  It opens the serial port, waits for the board to print "TIME?"
-(sent automatically at the end of setup()), and immediately replies with the
-current local wall-clock time in the format the firmware expects:
+Run this script on the PC before or after powering / re-plugging the RP2040
+board.  It opens the serial port and immediately sends the current local
+wall-clock time to the board in the format the firmware expects:
 
     T<YYYY-MM-DD HH:MM:SS>
 
-After the initial sync the script stays connected and keeps listening so you
-can also send manual commands (type the T… string and press Enter).
+This proactive sync means the RTC is updated as soon as the port opens,
+regardless of whether the board has already sent its "TIME?" prompt.
+The script then continues listening so it can also respond to any further
+"TIME?" requests (e.g. after a board reset) automatically.
+
 Press Ctrl+C to quit.
 
 Usage
@@ -36,7 +38,6 @@ Examples
 import sys
 import threading
 import datetime
-import time
 
 try:
     import serial
@@ -102,7 +103,7 @@ def _reader(ser: serial.Serial) -> None:
     while True:
         try:
             chunk = ser.read(ser.in_waiting or 1)
-        except serial.SerialException:
+        except (serial.SerialException, OSError):
             print("\n[sync_time] Serial connection lost.")
             break
         if not chunk:
@@ -120,7 +121,7 @@ def _reader(ser: serial.Serial) -> None:
                     ser.write(cmd)
                     ts = cmd.decode().strip()
                     print(f"[sync ] Sent → {ts}")
-                except serial.SerialException:
+                except (serial.SerialException, OSError):
                     print("[sync ] Failed to send time – port closed.")
 
 
@@ -142,9 +143,19 @@ def main() -> None:
         print("[sync_time]   python sync_time.py /dev/ttyACM1")
         sys.exit(1)
 
-    print("[sync_time] Connected.  Waiting for board to send TIME? …")
-    print("[sync_time] You can also type  T<YYYY-MM-DD HH:MM:SS>  and press Enter.")
-    print("[sync_time] Press Ctrl+C to quit.\n")
+    print("[sync_time] Connected.")
+
+    # ── Proactive initial time sync ──────────────────────────────────────────
+    # Send the current system time immediately so the RTC is synced even when
+    # the board already sent "TIME?" before this script was started.
+    cmd = _make_sync_cmd()
+    try:
+        ser.write(cmd)
+        print(f"[sync ] Auto-sent → {cmd.decode().strip()}")
+    except (serial.SerialException, OSError) as exc:
+        print(f"[sync ] Initial sync failed: {exc}")
+
+    print("[sync_time] Monitoring serial output.  Press Ctrl+C to quit.\n")
 
     # Start background reader thread
     t = threading.Thread(target=_reader, args=(ser,), daemon=True)
